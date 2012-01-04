@@ -71,6 +71,7 @@ module Music where
     trans :: Int -> Pitch -> Pitch
     trans i p = pitch (absPitch p + i)
 
+    -- Define os instrumentos que podem ser usados para executar uma Music, cf. especificado pelo padrão MIDI
     data IName 
 	= AcousticGrandPiano  | BrightAcousticPiano | ElectricGrandPiano
 	| HonkyTonkPiano      | RhodesPiano         | ChorusedPiano
@@ -110,3 +111,88 @@ module Music where
 	| Applause              | Gunshot             | Percussion
 	deriving (Show,Eq,Ord,Enum)
 
+    -- As funções cf, c, cs... definem a nota (dó bemol, dó, dó sustenido...), e para gerar uma Music, precisam receber uma oitava (Octave) e uma duração (Dur)
+    cf, c, cs, df, d, ds, ef, e, es, ff, f, fs, gf, g, gs, af, a, as, bf, b, bs :: Octave -> Dur -> Music
+ 
+    cf o = Note (Cf, o); c o = Note (C, o); cs o = Note (Cs, o)
+    df o = Note (Df, o); d o = Note (D, o); ds o = Note (Ds, o)
+    ef o = Note (Ef, o); e o = Note (E, o); es o = Note (Es, o)
+    ff o = Note (Ff, o); f o = Note (F, o); fs o = Note (Fs, o)
+    gf o = Note (Gf, o); g o = Note (G, o); gs o = Note (Gs, o)
+    af o = Note (Af, o); a o = Note (A, o); as o = Note (As, o)
+    bf o = Note (Bf, o); b o = Note (B, o); bs o = Note (Bs, o)
+
+    -- Algumas durações (Dur) comumente utilizadas
+    wn, hn, qn, en, sn, tn :: Dur
+    dhn, dqn, den, dsn :: Dur
+
+    -- Algumas pausas (Music, com construtor Rest) comumente utilizadas
+    wnr, hnr, qnr, enr, snr, tnr :: Music
+    dhnr, dqnr, denr, dsnr :: Music
+
+    wn = 1; wnr = Rest wn -- Duração unitária
+    hn = 1%2; hnr = Rest hn -- Meia
+    qn = 1%4; qnr = Rest qn -- Quarta
+    en = 1%8; enr = Rest en -- Oitava
+    sn = 1%16; snr = Rest sn -- Um desesseis avos
+    tn = 1%32; tnr = Rest tn -- Um trinta e dois avos
+
+    dhn = 3%4; dhnr = Rest dhn -- dotted half
+    dqn = 3%8; dqnr = Rest dqn -- dotted quarter
+    den = 3%16; denr = Rest den -- dotted eighth
+    dsn = 3%32; dsnr = Rest dsn -- dotted sixteenth
+
+    -- line recebe uma lista de músicas e retorna uma música que é a concatenação das músicas dadas
+    -- chord recebe uma lista de músicas e retorna um acorde
+    line, chord :: Music -> Music
+    line = foldr (:+:) (Rest 0)
+    chord = foldr (:=:) (Rest 0)
+
+    -- Atrasa a execução de uma música (Music)
+    delay :: Dur -> Music -> Music
+    delay d m = Rest d :+: m
+
+    -- Repete indefinidamente uma música
+    repeatM :: Music -> Music
+    repeatM m = m :+: repeatM m
+
+    -- dur retorna a duração (Dur) de uma música (Music)
+    dur :: Music -> Dur
+    dur (Note _ d) = d
+    dur (Rest d)   = d
+    dur (m1 :+: m2) = dur m1 + dur m2
+    dur (m1 :=: m2) = dur m1 `max` dur m2
+    dur (Tempo a m) = dur m/a
+    dur (Trans _ m) = dur m
+    dur (Instr _ m) = dur m
+
+    -- Inverte uma música (toca-a de trás para frente)
+    revM :: Music -> Music
+    revM n@(Note _ _) = n
+    revM r@(Rest _ _) = r
+    revM (Tempo a m) = Tempo a (revM m)
+    revM (Trans i m) = Trans i (revM m)
+    revM (Instr i m) = Instr i (revM m)
+    revM (m1 :+: m2) = revM m2 :+: revM m1
+    revM (m1 :=: m2)
+	= let d1 = dur m1
+	      d2 = dur m2
+	  in if d1 > d2 then revM m1 :=: (Rest (d1 - d2) :+: revM m2)
+	                else (Rest (d2 - d1) :+: revM m1) :=: revM m2
+
+    -- A função cut é auxiliar, utilizada pelo operador /=:
+    cut :: Dur -> Music -> Music
+    cut d m | d <= 0   = Rest 0
+    cut d (Note x d0)  = Note x (min d d0)
+    cut d (Rest d0)    = Rest (min d d0)
+    cut d (m1 :=: m2)  = cut d m1 :=: cut d m2
+    cut d (Tempo a m)  = Tempo a (cut (d*a) m)
+    cut d (Tans a m)   = Trans a (cut d m)
+    cut d (Instr i m)  = Instr i (cut d m)
+    cut d (m1 :+: m2)  = let m1' = cut d m1
+			     m2' = cut (d - dur m1) m2
+			 in m1' :+: m2'
+
+    -- O operador /=: cria um acorde com a menor das duas músicas dadas
+    (/=:) :: Music -> Music -> Music
+    m1 /=: m2 = cut (min (dur m1) (dur m2)) (m1 :=: m2)
