@@ -1,5 +1,5 @@
 -- File: ch05/PutJSON.hs
-moudle PutJSON 
+module PutJSON 
 	(
 	renderJValue,
 	putJValue
